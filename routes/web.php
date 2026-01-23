@@ -65,6 +65,74 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->grou
     Route::patch('/payouts/{payout}/mark-paid', [AdminController::class, 'markPayoutPaid'])->name('payouts.mark-paid');
 });
 
+// Route temporaire pour devenir artiste
+Route::get('/become-artist', function() {
+    if (auth()->check()) {
+        auth()->user()->update(['role' => \App\Enums\UserRole::Artist]);
+        return redirect('/')->with('success', 'Vous êtes maintenant artiste!');
+    }
+    return redirect('/login');
+})->middleware('auth');
+
+// Route de debug pour vérifier les pistes
+Route::get('/debug-tracks', function() {
+    $tracks = \App\Models\Track::latest()->take(5)->get();
+    $count = \App\Models\Track::count();
+    
+    $html = "<h1>Debug Tracks</h1>";
+    $html .= "<p>Total tracks: {$count}</p>";
+    
+    if ($count > 0) {
+        $html .= "<ul>";
+        foreach ($tracks as $track) {
+            $fileExists = \Storage::disk('public')->exists($track->full_file_key ?? '') ? 'OUI' : 'NON';
+            $html .= "<li>ID: {$track->id} - {$track->title} par {$track->artist_name} - Prix: {$track->price_cents}c - Fichier: {$fileExists}</li>";
+        }
+        $html .= "</ul>";
+    } else {
+        $html .= "<p>Aucune piste trouvée</p>";
+    }
+    
+    return $html;
+});
+
+// Upload simple pour test
+Route::post('/test-upload', function(\Illuminate\Http\Request $request) {
+    try {
+        $user = $request->user();
+        if (!$user || !$user->isArtist()) {
+            return response()->json(['error' => 'Pas artiste']);
+        }
+        
+        $request->validate([
+            'title' => 'required|string|max:255',
+            'artist_name' => 'required|string|max:255', 
+            'price_cents' => 'required|integer|min:50',
+            'track' => 'required|file|mimes:mp3|max:20000'
+        ]);
+        
+        $path = $request->file('track')->store('tracks', 'public');
+        
+        $track = \App\Models\Track::create([
+            'user_id' => $user->id,
+            'title' => $request->title,
+            'artist_name' => $request->artist_name,
+            'price_cents' => $request->price_cents,
+            'full_file_key' => $path,
+            'preview_url' => \Storage::disk('public')->url($path)
+        ]);
+        
+        return response()->json(['success' => true, 'track_id' => $track->id]);
+        
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()]);
+    }
+})->middleware('auth');
+
+Route::get('/test-upload', function() {
+    return view('test-upload');
+})->middleware('auth');
+
 // Profil utilisateur
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');

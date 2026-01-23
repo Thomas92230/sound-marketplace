@@ -10,19 +10,14 @@ use Illuminate\Support\Facades\Storage;
 
 class TrackController extends Controller
 {
-    protected function audioDisk(): string
-    {
-        // Utilise FILESYSTEM_DISK (ex: "public" en dev, "s3" en prod)
-        return (string) config('filesystems.default', 'public');
-    }
 
     /**
      * Affiche le catalogue (Page d'accueil)
      */
     public function index(Request $request)
     {
-        // On récupère toutes les pistes triées par les plus récentes
-        $tracks = Track::with('artist')->latest()->get();
+        // Pagination pour éviter de charger toutes les pistes
+        $tracks = Track::with('artist')->latest()->paginate(20);
         
         // Vérifier quels morceaux ont été achetés par l'utilisateur connecté
         $purchasedTrackIds = [];
@@ -70,12 +65,12 @@ class TrackController extends Controller
         $disk = $this->audioDisk();
 
         // Vérifier que le fichier existe
-        if (!Storage::disk($disk)->exists($track->full_file_key)) {
+        if (!Storage::disk('public')->exists($track->full_file_key)) {
             abort(404, 'Fichier non trouvé.');
         }
 
         // Générer le téléchargement
-        return Storage::disk($disk)->download(
+        return Storage::disk('public')->download(
             $track->full_file_key,
             "{$track->title} - {$track->artist_name}.mp3"
         );
@@ -111,35 +106,41 @@ class TrackController extends Controller
     {
         $user = $request->user();
 
-        // 1. Validation des données
+        // Validation simple
         $request->validate([
             'title' => 'required|string|max:255',
             'artist_name' => 'required|string|max:255',
-            'price_cents' => 'required|numeric',
-            'track' => 'required|mimes:mp3|max:20000', // Limite à 20 Mo
+            'price_cents' => 'required|integer|min:1',
+            'track' => 'required|file|mimes:mp3|max:20000'
+        ], [
+            'title.required' => 'Le titre est obligatoire.',
+            'artist_name.required' => 'Le nom de l\'artiste est obligatoire.',
+            'price_cents.required' => 'Le prix est obligatoire.',
+            'price_cents.min' => 'Le prix doit être d\'au moins 1 centime.',
+            'track.required' => 'Le fichier audio est obligatoire.',
+            'track.mimes' => 'Le fichier doit être au format MP3.',
+            'track.max' => 'Le fichier ne peut pas dépasser 20 MB.'
         ]);
 
-        // 2. Upload (disque configurable: public en dev, s3 en prod)
-        if ($request->hasFile('track')) {
-            $disk = $this->audioDisk();
-
-            // Sur S3, on stocke en public pour permettre le streaming du preview.
-            // Sur "public" (local), storePublicly garde le même comportement attendu.
-            $path = $request->file('track')->storePublicly('tracks', $disk);
-
-            // 3. Enregistrement en base de données MySQL
+        try {
+            // Upload simple
+            $path = $request->file('track')->store('tracks', 'public');
+            
+            // Enregistrement en base de données
             Track::create([
-                'user_id' => $user?->id,
+                'user_id' => $user->id,
                 'title' => $request->title,
                 'artist_name' => $request->artist_name,
                 'price_cents' => $request->price_cents,
                 'full_file_key' => $path,
-                'preview_url' => Storage::disk($disk)->url($path),
+                'preview_url' => Storage::disk('public')->url($path),
             ]);
 
             return redirect('/')->with('success', 'Morceau ajouté au catalogue !');
+            
+        } catch (\Exception $e) {
+            \Log::error('Erreur upload track: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Erreur: ' . $e->getMessage()]);
         }
-
-        return back()->with('error', 'Une erreur est survenue lors de l\'upload.');
     }
 }

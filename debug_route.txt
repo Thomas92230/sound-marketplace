@@ -1,0 +1,18 @@
+Route::get('/debug-tracks', function() {
+    $tracks = \App\Models\Track::latest()->take(5)->get();
+    $count = \App\Models\Track::count();
+    
+    return response()->json([
+        'total_tracks' => $count,
+        'latest_tracks' => $tracks->map(function($track) {
+            return [
+                'id' => $track->id,
+                'title' => $track->title,
+                'artist_name' => $track->artist_name,
+                'price_cents' => $track->price_cents,
+                'created_at' => $track->created_at,
+                'file_exists' => \Storage::disk('public')->exists($track->full_file_key ?? '')
+            ];
+        })
+    ]);
+});

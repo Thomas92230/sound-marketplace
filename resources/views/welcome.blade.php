@@ -110,6 +110,13 @@
                         <p class="text-center text-gray-500 py-10">Aucun morceau disponible pour le moment.</p>
                     @endforelse
                 </div>
+
+                <!-- Pagination -->
+                @if($tracks->hasPages())
+                    <div class="mt-6">
+                        {{ $tracks->links() }}
+                    </div>
+                @endif
             </main>
         </div>
 
