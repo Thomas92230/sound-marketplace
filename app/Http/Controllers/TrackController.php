@@ -16,8 +16,41 @@ class TrackController extends Controller
      */
     public function index(Request $request)
     {
-        // Pagination pour éviter de charger toutes les pistes
-        $tracks = Track::with('artist')->latest()->paginate(20);
+        $query = Track::with('artist');
+        
+        // Recherche par titre ou artiste
+        if ($search = $request->get('search')) {
+            $query->where(function($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                  ->orWhere('artist_name', 'like', "%{$search}%");
+            });
+        }
+        
+        // Filtre par prix
+        if ($minPrice = $request->get('min_price')) {
+            $query->where('price_cents', '>=', $minPrice * 100);
+        }
+        if ($maxPrice = $request->get('max_price')) {
+            $query->where('price_cents', '<=', $maxPrice * 100);
+        }
+        
+        // Tri
+        $sort = $request->get('sort', 'latest');
+        switch ($sort) {
+            case 'price_asc':
+                $query->orderBy('price_cents');
+                break;
+            case 'price_desc':
+                $query->orderByDesc('price_cents');
+                break;
+            case 'title':
+                $query->orderBy('title');
+                break;
+            default:
+                $query->latest();
+        }
+        
+        $tracks = $query->paginate(20)->withQueryString();
         
         // Vérifier quels morceaux ont été achetés par l'utilisateur connecté
         $purchasedTrackIds = [];
@@ -133,7 +166,7 @@ class TrackController extends Controller
                 'artist_name' => $request->artist_name,
                 'price_cents' => $request->price_cents,
                 'full_file_key' => $path,
-                'preview_url' => Storage::disk('public')->url($path),
+                'preview_url' => url('storage/' . $path),
             ]);
 
             return redirect('/')->with('success', 'Morceau ajouté au catalogue !');
@@ -142,5 +175,99 @@ class TrackController extends Controller
             \Log::error('Erreur upload track: ' . $e->getMessage());
             return back()->withErrors(['error' => 'Erreur: ' . $e->getMessage()]);
         }
+    }
+
+    /**
+     * Supprime un morceau
+     */
+    public function destroy(Track $track)
+    {
+        $user = auth()->user();
+        
+        // Vérifier que l'utilisateur est propriétaire ou admin
+        if ($track->user_id !== $user->id && !$user->isAdmin()) {
+            abort(403, 'Non autorisé');
+        }
+
+        // Supprimer le fichier
+        if ($track->full_file_key && Storage::disk('public')->exists($track->full_file_key)) {
+            Storage::disk('public')->delete($track->full_file_key);
+        }
+
+        // Supprimer de la base
+        $track->delete();
+
+        return back()->with('success', 'Morceau supprimé avec succès.');
+    }
+
+    /**
+     * Supprime plusieurs morceaux
+     */
+    public function bulkDestroy(Request $request)
+    {
+        $user = auth()->user();
+        $trackIds = $request->input('track_ids', []);
+        
+        if (empty($trackIds)) {
+            return back()->with('error', 'Aucun morceau sélectionné.');
+        }
+
+        $tracks = Track::whereIn('id', $trackIds)
+            ->where(function($query) use ($user) {
+                $query->where('user_id', $user->id)
+                      ->orWhere(function($q) use ($user) {
+                          if ($user->isAdmin()) $q->whereRaw('1=1');
+                      });
+            })
+            ->get();
+
+        foreach ($tracks as $track) {
+            if ($track->full_file_key && Storage::disk('public')->exists($track->full_file_key)) {
+                Storage::disk('public')->delete($track->full_file_key);
+            }
+            $track->delete();
+        }
+
+        return back()->with('success', count($tracks) . ' morceau(x) supprimé(s).');
+    }
+
+    /**
+     * Affiche le formulaire de modification
+     */
+    public function edit(Track $track)
+    {
+        $user = auth()->user();
+        
+        if ($track->user_id !== $user->id && !$user->isAdmin()) {
+            abort(403, 'Non autorisé');
+        }
+
+        return view('tracks.edit', compact('track'));
+    }
+
+    /**
+     * Met à jour un morceau
+     */
+    public function update(Request $request, Track $track)
+    {
+        $user = auth()->user();
+        
+        if ($track->user_id !== $user->id && !$user->isAdmin()) {
+            abort(403, 'Non autorisé');
+        }
+
+        $request->validate([
+            'title' => 'required|string|max:255',
+            'artist_name' => 'required|string|max:255',
+            'price_cents' => 'required|integer|min:1',
+        ]);
+
+        $track->update([
+            'title' => $request->title,
+            'artist_name' => $request->artist_name,
+            'price_cents' => $request->price_cents,
+        ]);
+
+        return redirect()->route('dashboard')->with('success', 'Morceau modifié avec succès.');
     }
 }

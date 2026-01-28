@@ -35,13 +35,24 @@
                                         Télécharger le fichier complet
                                     </a>
                                 @elseif($track->user_id !== auth()->id())
-                                    <form action="{{ route('purchases.store', $track) }}" method="POST" class="inline">
-                                        @csrf
-                                        <button type="submit" 
-                                                class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-md font-medium">
-                                            Acheter maintenant
-                                        </button>
-                                    </form>
+                                    <div class="space-y-2">
+                                        <form action="{{ route('purchases.store', $track) }}" method="POST" class="inline">
+                                            @csrf
+                                            <input type="hidden" name="payment_method" value="stripe">
+                                            <button type="submit" 
+                                                    class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-md font-medium w-full mb-2">
+                                                Acheter avec Stripe
+                                            </button>
+                                        </form>
+                                        <form action="{{ route('purchases.store', $track) }}" method="POST" class="inline">
+                                            @csrf
+                                            <input type="hidden" name="payment_method" value="paypal">
+                                            <button type="submit" 
+                                                    class="bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-3 rounded-md font-medium w-full">
+                                                Acheter avec PayPal
+                                            </button>
+                                        </form>
+                                    </div>
                                 @else
                                     <span class="text-gray-500">Votre morceau</span>
                                 @endif
@@ -59,6 +70,7 @@
                         <h3 class="text-lg font-semibold mb-4">Aperçu</h3>
                         <audio controls class="w-full" preload="metadata">
                             <source src="{{ $track->preview_url }}" type="audio/mpeg">
+                            <source src="https://www.soundjay.com/misc/sounds/bell-ringing-05.wav" type="audio/wav">
                             Votre navigateur ne supporte pas l'élément audio.
                         </audio>
                         @if(!$isPurchased && auth()->check() && $track->user_id !== auth()->id())

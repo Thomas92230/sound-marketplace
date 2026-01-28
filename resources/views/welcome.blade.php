@@ -53,10 +53,43 @@
             <main class="w-full lg:max-w-4xl bg-white dark:bg-[#161615] shadow-sm rounded-lg p-6 lg:p-10">
                 <div class="flex justify-between items-center mb-8">
                     <h1 class="text-2xl font-bold dark:text-white">Nouveautés Musicales</h1>
-                    <a href="/upload" class="bg-black dark:bg-white dark:text-black text-white px-4 py-2 rounded-md text-sm font-medium">
-                        + Ajouter un titre
-                    </a>
+                    @auth
+                        @if(auth()->user()->isArtist())
+                            <a href="/upload" class="bg-black dark:bg-white dark:text-black text-white px-4 py-2 rounded-md text-sm font-medium">
+                                + Ajouter un titre
+                            </a>
+                        @endif
+                    @endauth
                 </div>
+
+                <!-- Barre de recherche et filtres -->
+                <form method="GET" class="mb-6 space-y-4">
+                    <div class="flex gap-4">
+                        <input type="text" name="search" value="{{ request('search') }}" 
+                               placeholder="Rechercher par titre ou artiste..." 
+                               class="flex-1 px-4 py-2 border rounded-md dark:bg-gray-800 dark:border-gray-600 dark:text-white">
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md">
+                            Rechercher
+                        </button>
+                        @if(request()->hasAny(['search', 'min_price', 'max_price', 'sort']))
+                            <a href="{{ route('home') }}" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md">
+                                Effacer
+                            </a>
+                        @endif
+                    </div>
+                    <div class="flex gap-4 text-sm">
+                        <input type="number" name="min_price" value="{{ request('min_price') }}" 
+                               placeholder="Prix min (€)" class="px-3 py-1 border rounded dark:bg-gray-800 dark:border-gray-600">
+                        <input type="number" name="max_price" value="{{ request('max_price') }}" 
+                               placeholder="Prix max (€)" class="px-3 py-1 border rounded dark:bg-gray-800 dark:border-gray-600">
+                        <select name="sort" class="px-3 py-1 border rounded dark:bg-gray-800 dark:border-gray-600">
+                            <option value="latest" {{ request('sort') == 'latest' ? 'selected' : '' }}>Plus récents</option>
+                            <option value="price_asc" {{ request('sort') == 'price_asc' ? 'selected' : '' }}>Prix croissant</option>
+                            <option value="price_desc" {{ request('sort') == 'price_desc' ? 'selected' : '' }}>Prix décroissant</option>
+                            <option value="title" {{ request('sort') == 'title' ? 'selected' : '' }}>Titre A-Z</option>
+                        </select>
+                    </div>
+                </form>
 
                 <div class="grid grid-cols-1 gap-4">
                     @forelse($tracks as $track)
@@ -69,6 +102,7 @@
                             <div class="flex items-center gap-6">
                                 <audio controls class="h-8" preload="metadata">
                                     <source src="{{ $track->preview_url }}" type="audio/mpeg">
+                                    <source src="https://www.soundjay.com/misc/sounds/bell-ringing-05.wav" type="audio/wav">
                                     Votre navigateur ne supporte pas l'élément audio.
                                 </audio>
 
@@ -84,13 +118,22 @@
                                                 Télécharger
                                             </a>
                                         @elseif($track->user_id !== auth()->id())
-                                            <form action="{{ route('purchases.store', $track) }}" method="POST" class="inline">
-                                                @csrf
-                                                <button type="submit" 
-                                                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                                    Acheter
-                                                </button>
-                                            </form>
+                                            <div class="flex gap-2">
+                                                <form action="{{ route('cart.add', $track) }}" method="POST" class="inline">
+                                                    @csrf
+                                                    <button type="submit" 
+                                                            class="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-md text-sm font-medium">
+                                                        🛍️ Panier
+                                                    </button>
+                                                </form>
+                                                <form action="{{ route('purchases.store', $track) }}" method="POST" class="inline">
+                                                    @csrf
+                                                    <button type="submit" 
+                                                            class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-md text-sm font-medium">
+                                                        💳 Acheter
+                                                    </button>
+                                                </form>
+                                            </div>
                                         @endif
                                     @else
                                         <a href="{{ route('login') }}" 

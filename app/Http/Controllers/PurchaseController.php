@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Purchase;
 use App\Models\Track;
+use App\Services\PayPalService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -15,8 +16,10 @@ use Stripe\Exception\ApiErrorException;
 
 class PurchaseController extends Controller
 {
-    public function __construct(protected ArtistPayoutService $artistPayouts)
-    {
+    public function __construct(
+        protected ArtistPayoutService $artistPayouts,
+        protected PayPalService $paypal
+    ) {
         Stripe::setApiKey(config('services.stripe.secret'));
     }
 
@@ -34,69 +37,84 @@ class PurchaseController extends Controller
     }
 
     /**
-     * Crée une session de paiement Stripe
+     * Crée une session de paiement
      */
     public function store(Request $request, Track $track)
     {
         $user = $request->user();
+        $paymentMethod = $request->input('payment_method', 'stripe');
 
-        // Vérifier si l'utilisateur a déjà acheté ce morceau
+        // Vérifications communes
         if ($track->isPurchasedBy($user->id)) {
             return back()->with('error', 'Vous avez déjà acheté ce morceau.');
         }
 
-        // Vérifier que l'utilisateur n'achète pas son propre morceau
         if ($track->user_id === $user->id) {
             return back()->with('error', 'Vous ne pouvez pas acheter votre propre morceau.');
         }
 
+        // Créer l'enregistrement d'achat
+        $purchase = Purchase::create([
+            'user_id' => $user->id,
+            'track_id' => $track->id,
+            'amount_cents' => $track->price_cents,
+            'payment_method' => $paymentMethod,
+            'payment_id' => 'pending',
+            'status' => 'pending',
+        ]);
+
         try {
-            // Créer l'enregistrement d'achat en attente
-            $purchase = Purchase::create([
-                'user_id' => $user->id,
-                'track_id' => $track->id,
-                'amount_cents' => $track->price_cents,
-                'payment_id' => 'pending',
-                'payment_method' => 'stripe',
-                'status' => 'pending',
-            ]);
-
-            // Créer une session de paiement Stripe Checkout
-            $session = Session::create([
-                'payment_method_types' => ['card'],
-                'line_items' => [[
-                    'price_data' => [
-                        'currency' => 'eur',
-                        'product_data' => [
-                            'name' => $track->title,
-                            'description' => 'Par ' . $track->artist_name,
-                        ],
-                        'unit_amount' => $track->price_cents,
-                    ],
-                    'quantity' => 1,
-                ]],
-                'mode' => 'payment',
-                'success_url' => route('purchases.success', ['purchase' => $purchase->id]) . '?session_id={CHECKOUT_SESSION_ID}',
-                'cancel_url' => route('tracks.show', $track) . '?canceled=1',
-                'metadata' => [
-                    'purchase_id' => $purchase->id,
-                    'user_id' => $user->id,
-                    'track_id' => $track->id,
-                ],
-            ]);
-
-            // Mettre à jour l'achat avec l'ID de session Stripe
-            $purchase->update([
-                'payment_id' => $session->id,
-            ]);
-
-            // Rediriger vers Stripe Checkout
-            return redirect($session->url);
-
-        } catch (ApiErrorException $e) {
-            Log::error('Erreur Stripe: ' . $e->getMessage());
-            return back()->with('error', 'Une erreur est survenue lors de la création du paiement. Veuillez réessayer.');
+            if ($paymentMethod === 'paypal') {
+                return $this->createPayPalPayment($purchase);
+            }
+            
+            return $this->createStripePayment($purchase, $track, $user);
+        } catch (\Exception $e) {
+            Log::error("Erreur paiement {$paymentMethod}: " . $e->getMessage());
+            return back()->with('error', 'Erreur lors de la création du paiement.');
         }
+    }
+
+    private function createStripePayment(Purchase $purchase, Track $track, $user)
+    {
+        $session = Session::create([
+            'payment_method_types' => ['card'],
+            'line_items' => [[
+                'price_data' => [
+                    'currency' => 'eur',
+                    'product_data' => [
+                        'name' => $track->title,
+                        'description' => 'Par ' . $track->artist_name,
+                    ],
+                    'unit_amount' => $track->price_cents,
+                ],
+                'quantity' => 1,
+            ]],
+            'mode' => 'payment',
+            'success_url' => route('purchases.success', $purchase) . '?session_id={CHECKOUT_SESSION_ID}',
+            'cancel_url' => route('tracks.show', $track),
+            'metadata' => ['purchase_id' => $purchase->id],
+        ]);
+
+        $purchase->update(['payment_id' => $session->id]);
+        return redirect($session->url);
+    }
+
+    private function createPayPalPayment(Purchase $purchase)
+    {
+        $order = $this->paypal->createPayment($purchase);
+        
+        if (isset($order['id'])) {
+            $purchase->update(['payment_id' => $order['id']]);
+            
+            foreach ($order['links'] as $link) {
+                if ($link['rel'] === 'approve') {
+                    return redirect($link['href']);
+                }
+            }
+        }
+        
+        throw new \Exception('Erreur PayPal');
     }
 
     /**
@@ -150,4 +168,63 @@ class PurchaseController extends Controller
     }
 
     // NB: la logique payout est centralisée dans ArtistPayoutService (idempotent + Stripe Connect)
+
+    /**
+     * Checkout du panier complet
+     */
+    public function checkoutCart(Request $request)
+    {
+        $cart = session('cart', []);
+        
+        if (empty($cart)) {
+            return redirect()->route('cart.index')->with('error', 'Panier vide.');
+        }
+        
+        $tracks = Track::whereIn('id', array_keys($cart))->get();
+        $total = $tracks->sum('price_cents');
+        
+        // Créer un achat groupé
+        $purchase = Purchase::create([
+            'user_id' => $request->user()->id,
+            'track_id' => $tracks->first()->id, // Premier track comme référence
+            'amount_cents' => $total,
+            'payment_method' => 'stripe',
+            'payment_id' => 'pending',
+            'status' => 'pending',
+        ]);
+        
+        try {
+            $lineItems = [];
+            foreach ($tracks as $track) {
+                $lineItems[] = [
+                    'price_data' => [
+                        'currency' => 'eur',
+                        'product_data' => [
+                            'name' => $track->title,
+                            'description' => 'Par ' . $track->artist_name,
+                        ],
+                        'unit_amount' => $track->price_cents,
+                    ],
+                    'quantity' => 1,
+                ];
+            }
+            
+            $session = \Stripe\Checkout\Session::create([
+                'payment_method_types' => ['card'],
+                'line_items' => $lineItems,
+                'mode' => 'payment',
+                'success_url' => route('purchases.success', $purchase) . '?session_id={CHECKOUT_SESSION_ID}',
+                'cancel_url' => route('cart.index'),
+                'metadata' => ['purchase_id' => $purchase->id],
+            ]);
+            
+            $purchase->update(['payment_id' => $session->id]);
+            session()->forget('cart');
+            
+            return redirect($session->url);
+            
+        } catch (\Exception $e) {
+            return back()->with('error', 'Erreur lors du paiement.');
+        }
+    }
 }

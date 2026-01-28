@@ -23,6 +23,10 @@ Route::get('/artists/{artist}', [ArtistController::class, 'show'])->name('artist
 Route::middleware(['auth', 'role:artist,admin'])->group(function () {
     Route::get('/upload', [TrackController::class, 'showForm'])->name('tracks.upload.form');
     Route::post('/upload', [TrackController::class, 'store'])->name('tracks.upload.store');
+    Route::get('/tracks/{track}/edit', [TrackController::class, 'edit'])->name('tracks.edit');
+    Route::patch('/tracks/{track}', [TrackController::class, 'update'])->name('tracks.update');
+    Route::delete('/tracks/{track}', [TrackController::class, 'destroy'])->name('tracks.destroy');
+    Route::delete('/tracks-bulk', [TrackController::class, 'bulkDestroy'])->name('tracks.bulk-delete');
     
     // Profil artiste
     Route::get('/artist/profile', [ArtistController::class, 'edit'])->name('artists.edit');
@@ -42,6 +46,14 @@ Route::middleware(['auth', 'role:artist,admin'])->group(function () {
 
 // Achats
 Route::middleware('auth')->group(function () {
+    // Panier
+    Route::get('/cart', [\App\Http\Controllers\CartController::class, 'index'])->name('cart.index');
+    Route::post('/cart/{track}', [\App\Http\Controllers\CartController::class, 'add'])->name('cart.add');
+    Route::delete('/cart/{track}', [\App\Http\Controllers\CartController::class, 'remove'])->name('cart.remove');
+    Route::delete('/cart', [\App\Http\Controllers\CartController::class, 'clear'])->name('cart.clear');
+    Route::post('/cart/checkout', [PurchaseController::class, 'checkoutCart'])->name('cart.checkout');
+    
+    // Achats individuels
     Route::post('/tracks/{track}/purchase', [PurchaseController::class, 'store'])->name('purchases.store');
     Route::get('/purchases', [PurchaseController::class, 'index'])->name('purchases.index');
     Route::get('/purchases/{purchase}', [PurchaseController::class, 'show'])->name('purchases.show');
@@ -52,6 +64,10 @@ Route::middleware('auth')->group(function () {
 Route::post('/webhook/stripe', [\App\Http\Controllers\StripeWebhookController::class, 'handleWebhook'])
     ->middleware('web')
     ->name('webhook.stripe');
+
+// Webhook PayPal
+Route::post('/webhook/paypal', [\App\Http\Controllers\PayPalWebhookController::class, 'handleWebhook'])
+    ->name('webhook.paypal');
 
 // Panneau d'administration
 Route::middleware(['auth', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
