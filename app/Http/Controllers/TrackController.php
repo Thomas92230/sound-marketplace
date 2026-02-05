@@ -4,12 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Models\Track;
 use App\Models\Purchase;
+use App\Services\AudioStorageService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 
 class TrackController extends Controller
 {
+    public function __construct(
+        private AudioStorageService $audioStorage
+    ) {}
 
     /**
      * Affiche le catalogue (Page d'accueil)
@@ -156,7 +160,7 @@ class TrackController extends Controller
         ]);
 
         try {
-            // Upload simple
+            // Upload simple vers stockage local
             $path = $request->file('track')->store('tracks', 'public');
             
             // Enregistrement en base de données
@@ -166,7 +170,7 @@ class TrackController extends Controller
                 'artist_name' => $request->artist_name,
                 'price_cents' => $request->price_cents,
                 'full_file_key' => $path,
-                'preview_url' => url('storage/' . $path),
+                'preview_url' => Storage::disk('public')->url($path),
             ]);
 
             return redirect('/')->with('success', 'Morceau ajouté au catalogue !');

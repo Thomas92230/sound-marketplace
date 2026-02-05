@@ -1,0 +1,12 @@
+[
+  {
+    "AllowedHeaders": ["*"],
+    "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
+    "AllowedOrigins": [
+      "https://votre-domaine.com",
+      "http://localhost:8000"
+    ],
+    "ExposeHeaders": ["ETag", "x-amz-meta-*"],
+    "MaxAgeSeconds": 3000
+  }
+]

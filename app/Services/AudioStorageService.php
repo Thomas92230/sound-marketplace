@@ -2,57 +2,48 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Str;
+use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
 
 class AudioStorageService
 {
     public function store(UploadedFile $file, int $userId): array
     {
-        $disk = $this->getAudioDisk();
-        $filename = $this->generateSecureFilename($file, $userId);
-        
-        // Upload avec visibilité publique pour le streaming
-        $path = $file->storePubliclyAs('tracks', $filename, $disk);
-        
-        return [
-            'path' => $path,
-            'url' => Storage::disk($disk)->url($path),
-            'disk' => $disk
-        ];
+        try {
+            // Upload vers Cloudinary avec transformation pour audio
+            $result = Cloudinary::uploadFile(
+                $file->getRealPath(),
+                [
+                    'folder' => 'music-marketplace/tracks',
+                    'public_id' => $userId . '_' . time() . '_' . pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME),
+                    'resource_type' => 'video', // Pour les fichiers audio
+                    'format' => 'mp3'
+                ]
+            );
+
+            return [
+                'path' => $result->getPublicId(),
+                'url' => $result->getSecurePath(),
+                'disk' => 'cloudinary'
+            ];
+        } catch (\Exception $e) {
+            \Log::error('Erreur Cloudinary: ' . $e->getMessage());
+            throw new \Exception('Erreur lors de l\'upload vers Cloudinary: ' . $e->getMessage());
+        }
     }
 
-    public function delete(string $path): bool
+    public function delete(string $publicId): bool
     {
-        $disk = $this->getAudioDisk();
-        return Storage::disk($disk)->delete($path);
+        try {
+            Cloudinary::destroy($publicId, ['resource_type' => 'video']);
+            return true;
+        } catch (\Exception $e) {
+            return false;
+        }
     }
 
-    public function exists(string $path): bool
+    public function getUrl(string $publicId): string
     {
-        $disk = $this->getAudioDisk();
-        return Storage::disk($disk)->exists($path);
-    }
-
-    public function download(string $path, string $filename): \Symfony\Component\HttpFoundation\StreamedResponse
-    {
-        $disk = $this->getAudioDisk();
-        return Storage::disk($disk)->download($path, $filename);
-    }
-
-    private function getAudioDisk(): string
-    {
-        // En production, utilise S3, en développement utilise public
-        return config('app.env') === 'production' ? 's3' : 'public';
-    }
-
-    private function generateSecureFilename(UploadedFile $file, int $userId): string
-    {
-        $extension = $file->getClientOriginalExtension();
-        $hash = hash('sha256', $file->getContent());
-        $timestamp = now()->timestamp;
-        
-        return "{$userId}_{$timestamp}_{$hash}.{$extension}";
+        return Cloudinary::getUrl($publicId, ['resource_type' => 'video']);
     }
 }
