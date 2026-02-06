@@ -27,9 +27,10 @@ class PurchaseController extends Controller
     public function index(Request $request): View
     {
         $purchases = Purchase::where('user_id', $request->user()->id)
-            ->with('track')
+            ->with(['track:id,title,artist_name,price_cents'])
+            ->select('id', 'user_id', 'track_id', 'amount_cents', 'status', 'created_at')
             ->latest()
-            ->get();
+            ->paginate(20);
 
         return view('purchases.index', compact('purchases'));
     }
@@ -43,11 +44,19 @@ class PurchaseController extends Controller
 
         // Vérifier si l'utilisateur a déjà acheté ce morceau
         if ($track->isPurchasedBy($user->id)) {
+            Log::info('User attempted to purchase already owned track', [
+                'user_id' => $user->id,
+                'track_id' => $track->id
+            ]);
             return back()->with('error', 'Vous avez déjà acheté ce morceau.');
         }
 
         // Vérifier que l'utilisateur n'achète pas son propre morceau
         if ($track->user_id === $user->id) {
+            Log::warning('User attempted to purchase own track', [
+                'user_id' => $user->id,
+                'track_id' => $track->id
+            ]);
             return back()->with('error', 'Vous ne pouvez pas acheter votre propre morceau.');
         }
 
@@ -87,16 +96,30 @@ class PurchaseController extends Controller
             ]);
 
             // Mettre à jour l'achat avec l'ID de session Stripe
-            $purchase->update([
-                'payment_id' => $session->id,
+            $purchase->update(['payment_id' => $session->id]);
+
+            Log::info('Stripe session created', [
+                'purchase_id' => $purchase->id,
+                'session_id' => $session->id
             ]);
 
             // Rediriger vers Stripe Checkout
             return redirect($session->url);
 
         } catch (ApiErrorException $e) {
-            Log::error('Erreur Stripe: ' . $e->getMessage());
-            return back()->with('error', 'Une erreur est survenue lors de la création du paiement. Veuillez réessayer.');
+            Log::error('Stripe API error', [
+                'error' => $e->getMessage(),
+                'user_id' => $user->id,
+                'track_id' => $track->id
+            ]);
+            return back()->with('error', 'Erreur Stripe. Veuillez réessayer ou contacter le support.');
+        } catch (\Exception $e) {
+            Log::error('Payment creation error', [
+                'error' => $e->getMessage(),
+                'user_id' => $user->id,
+                'track_id' => $track->id
+            ]);
+            return back()->with('error', 'Une erreur est survenue. Veuillez réessayer.');
         }
     }
 

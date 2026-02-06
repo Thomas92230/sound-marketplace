@@ -5,9 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\Track;
 use App\Models\Purchase;
 use App\Services\AudioStorageService;
+use App\Http\Requests\TrackUploadRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class TrackController extends Controller
 {
@@ -20,7 +22,12 @@ class TrackController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Track::with('artist');
+        $perPage = $request->get('per_page', 12);
+        $perPage = in_array($perPage, [12, 24, 48]) ? $perPage : 12;
+        
+        $query = Track::query()
+            ->select('tracks.*')
+            ->with(['artist:id,name,email']);
         
         // Recherche par titre ou artiste
         if ($search = $request->get('search')) {
@@ -38,34 +45,34 @@ class TrackController extends Controller
             $query->where('price_cents', '<=', $maxPrice * 100);
         }
         
-        // Tri
+        // Tri optimisé
         $sort = $request->get('sort', 'latest');
         switch ($sort) {
             case 'price_asc':
-                $query->orderBy('price_cents');
+                $query->orderBy('price_cents', 'asc');
                 break;
             case 'price_desc':
-                $query->orderByDesc('price_cents');
+                $query->orderBy('price_cents', 'desc');
                 break;
             case 'title':
-                $query->orderBy('title');
+                $query->orderBy('title', 'asc');
                 break;
             default:
-                $query->latest();
+                $query->orderBy('created_at', 'desc');
         }
         
-        $tracks = $query->paginate(20)->withQueryString();
+        $tracks = $query->paginate($perPage)->withQueryString();
         
-        // Vérifier quels morceaux ont été achetés par l'utilisateur connecté
+        // Optimisation: une seule requête pour les achats
         $purchasedTrackIds = [];
-        if ($request->user()) {
-            $purchasedTrackIds = Purchase::where('user_id', $request->user()->id)
+        if ($user = $request->user()) {
+            $purchasedTrackIds = Purchase::where('user_id', $user->id)
                 ->where('status', 'completed')
                 ->pluck('track_id')
                 ->toArray();
         }
 
-        return view('welcome', compact('tracks', 'purchasedTrackIds'));
+        return view('welcome', compact('tracks', 'purchasedTrackIds', 'perPage'));
     }
 
     /**
@@ -88,29 +95,48 @@ class TrackController extends Controller
      */
     public function download(Track $track)
     {
-        $user = Auth::user();
+        try {
+            $user = Auth::user();
 
-        if (!$user) {
-            abort(403, 'Vous devez être connecté pour télécharger.');
+            if (!$user) {
+                abort(403, 'Vous devez être connecté pour télécharger.');
+            }
+
+            // Vérifier si l'utilisateur a acheté le morceau
+            if (!$track->isPurchasedBy($user->id) && $track->user_id !== $user->id) {
+                Log::warning('Unauthorized download attempt', [
+                    'user_id' => $user->id,
+                    'track_id' => $track->id
+                ]);
+                abort(403, 'Vous devez acheter ce morceau pour le télécharger.');
+            }
+
+            // Vérifier que le fichier existe
+            if (!Storage::disk('public')->exists($track->full_file_key)) {
+                Log::error('Track file not found', [
+                    'track_id' => $track->id,
+                    'file_key' => $track->full_file_key
+                ]);
+                abort(404, 'Fichier non trouvé.');
+            }
+
+            Log::info('Track downloaded', [
+                'user_id' => $user->id,
+                'track_id' => $track->id
+            ]);
+
+            // Générer le téléchargement
+            return Storage::disk('public')->download(
+                $track->full_file_key,
+                "{$track->title} - {$track->artist_name}.mp3"
+            );
+        } catch (\Exception $e) {
+            Log::error('Error downloading track', [
+                'error' => $e->getMessage(),
+                'track_id' => $track->id
+            ]);
+            return back()->with('error', 'Erreur lors du téléchargement.');
         }
-
-        // Vérifier si l'utilisateur a acheté le morceau
-        if (!$track->isPurchasedBy($user->id) && $track->user_id !== $user->id) {
-            abort(403, 'Vous devez acheter ce morceau pour le télécharger.');
-        }
-
-        $disk = $this->audioDisk();
-
-        // Vérifier que le fichier existe
-        if (!Storage::disk('public')->exists($track->full_file_key)) {
-            abort(404, 'Fichier non trouvé.');
-        }
-
-        // Générer le téléchargement
-        return Storage::disk('public')->download(
-            $track->full_file_key,
-            "{$track->title} - {$track->artist_name}.mp3"
-        );
     }
 
     /**
@@ -120,10 +146,10 @@ class TrackController extends Controller
     {
         $user = $request->user();
         
-        // On récupère les pistes de l'utilisateur connecté
         $tracks = Track::where('user_id', $user->id)
+            ->select('id', 'title', 'artist_name', 'price_cents', 'created_at')
             ->latest()
-            ->get();
+            ->paginate(15);
 
         return view('dashboard', compact('tracks'));
     }
@@ -139,45 +165,43 @@ class TrackController extends Controller
     /**
      * Gère l'enregistrement du fichier et des données
      */
-    public function store(Request $request)
+    public function store(TrackUploadRequest $request)
     {
         $user = $request->user();
-
-        // Validation simple
-        $request->validate([
-            'title' => 'required|string|max:255',
-            'artist_name' => 'required|string|max:255',
-            'price_cents' => 'required|integer|min:1',
-            'track' => 'required|file|mimes:mp3|max:20000'
-        ], [
-            'title.required' => 'Le titre est obligatoire.',
-            'artist_name.required' => 'Le nom de l\'artiste est obligatoire.',
-            'price_cents.required' => 'Le prix est obligatoire.',
-            'price_cents.min' => 'Le prix doit être d\'au moins 1 centime.',
-            'track.required' => 'Le fichier audio est obligatoire.',
-            'track.mimes' => 'Le fichier doit être au format MP3.',
-            'track.max' => 'Le fichier ne peut pas dépasser 20 MB.'
-        ]);
+        $validated = $request->validated();
 
         try {
-            // Upload simple vers stockage local
-            $path = $request->file('track')->store('tracks', 'public');
+            $file = $request->file('track');
             
-            // Enregistrement en base de données
-            Track::create([
+            // Vérifications supplémentaires
+            if (!$file->isValid()) {
+                throw new \Exception('Le fichier uploadé est invalide.');
+            }
+            
+            $path = $file->store('tracks', 'public');
+            
+            if (!$path) {
+                throw new \Exception('Échec de l\'upload du fichier.');
+            }
+            
+            $track = Track::create([
                 'user_id' => $user->id,
-                'title' => $request->title,
-                'artist_name' => $request->artist_name,
-                'price_cents' => $request->price_cents,
+                'title' => $validated['title'],
+                'artist_name' => $validated['artist_name'],
+                'price_cents' => $validated['price_cents'],
                 'full_file_key' => $path,
                 'preview_url' => Storage::disk('public')->url($path),
             ]);
 
+            Log::info('Track uploaded', ['track_id' => $track->id, 'size' => $file->getSize()]);
             return redirect('/')->with('success', 'Morceau ajouté au catalogue !');
             
+        } catch (\Illuminate\Database\QueryException $e) {
+            Log::error('DB error', ['error' => $e->getMessage()]);
+            return back()->withErrors(['error' => 'Erreur de base de données.'])->withInput();
         } catch (\Exception $e) {
-            \Log::error('Erreur upload track: ' . $e->getMessage());
-            return back()->withErrors(['error' => 'Erreur: ' . $e->getMessage()]);
+            Log::error('Upload error', ['error' => $e->getMessage()]);
+            return back()->withErrors(['error' => 'Erreur lors de l\'upload.'])->withInput();
         }
     }
 
