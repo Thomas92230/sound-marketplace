@@ -20,26 +20,26 @@ class TrackUploadRequest extends FormRequest
             'track' => [
                 'required',
                 'file',
-                'mimes:mp3,mpeg,mpga',
-                'max:50000', // 50MB
+                'mimes:mp3,mpeg,mpga,wav,ogg,m4a,aac,flac',
+                'max:100000', // 100MB
                 function ($attribute, $value, $fail) {
-                    // Validation du MIME type réel
                     $mimeType = $value->getMimeType();
-                    $allowedMimes = ['audio/mpeg', 'audio/mp3', 'audio/mpeg3', 'audio/x-mpeg-3'];
+                    $allowedMimes = [
+                        'audio/mpeg', 'audio/mp3', 'audio/mpeg3', 'audio/x-mpeg-3',
+                        'audio/wav', 'audio/x-wav', 'audio/wave',
+                        'audio/ogg', 'audio/x-ogg', 'application/ogg',
+                        'audio/mp4', 'audio/x-m4a', 'audio/m4a',
+                        'audio/aac', 'audio/x-aac',
+                        'audio/flac', 'audio/x-flac',
+                        'application/octet-stream'
+                    ];
                     
                     if (!in_array($mimeType, $allowedMimes)) {
-                        $fail('Le fichier doit être un fichier audio MP3 valide.');
+                        $fail('Format audio non supporté: ' . $mimeType);
                     }
                     
-                    // Vérification de la taille minimale (éviter les fichiers vides)
-                    if ($value->getSize() < 10000) { // 10KB minimum
-                        $fail('Le fichier audio est trop petit. Minimum 10 KB.');
-                    }
-                    
-                    // Vérification de l'extension
-                    $extension = strtolower($value->getClientOriginalExtension());
-                    if (!in_array($extension, ['mp3'])) {
-                        $fail('L\'extension du fichier doit être .mp3');
+                    if ($value->getSize() < 1000) {
+                        $fail('Le fichier audio est trop petit.');
                     }
                 },
             ],

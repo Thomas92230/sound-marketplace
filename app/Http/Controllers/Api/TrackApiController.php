@@ -12,10 +12,11 @@ class TrackApiController extends Controller
     {
         $query = Track::with('artist');
         
-        if ($search = $request->get('search')) {
+        $search = trim($request->get('search', ''));
+        if ($search !== '') {
             $query->where(function($q) use ($search) {
-                $q->where('title', 'like', "%{$search}%")
-                  ->orWhere('artist_name', 'like', "%{$search}%");
+                $q->where('title', 'like', '%' . $search . '%')
+                  ->orWhere('artist_name', 'like', '%' . $search . '%');
             });
         }
         

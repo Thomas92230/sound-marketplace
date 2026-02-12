@@ -26,7 +26,7 @@ class PurchaseController extends Controller
      */
     public function index(Request $request): View
     {
-        $purchases = Purchase::where('user_id', $request->user()->id)
+        $purchases = Purchase::where('user_id', '=', $request->user()->id)
             ->with(['track:id,title,artist_name,price_cents'])
             ->select('id', 'user_id', 'track_id', 'amount_cents', 'status', 'created_at')
             ->latest()

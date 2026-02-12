@@ -42,15 +42,18 @@ class AdminController extends Controller
         $query = User::query();
 
         if ($request->has('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
-            });
+            $search = $request->validated('search') ?? $request->input('search', '');
+            $search = trim($search);
+            if ($search !== '') {
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', '%' . $search . '%')
+                      ->orWhere('email', 'like', '%' . $search . '%');
+                });
+            }
         }
 
-        if ($request->has('role')) {
-            $query->where('role', $request->role);
+        if ($request->has('role') && in_array($request->input('role'), ['user', 'artist', 'admin'])) {
+            $query->where('role', '=', $request->input('role'));
         }
 
         $users = $query->latest()->paginate(20);
@@ -81,11 +84,13 @@ class AdminController extends Controller
         $query = Track::with('artist');
 
         if ($request->has('search')) {
-            $search = $request->search;
-            $query->where(function ($q) use ($search) {
-                $q->where('title', 'like', "%{$search}%")
-                  ->orWhere('artist_name', 'like', "%{$search}%");
-            });
+            $search = trim($request->input('search', ''));
+            if ($search !== '') {
+                $query->where(function ($q) use ($search) {
+                    $q->where('title', 'like', '%' . $search . '%')
+                      ->orWhere('artist_name', 'like', '%' . $search . '%');
+                });
+            }
         }
 
         $tracks = $query->latest()->paginate(20);
@@ -117,8 +122,8 @@ class AdminController extends Controller
     {
         $query = Purchase::with(['user', 'track']);
 
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
+        if ($request->has('status') && in_array($request->input('status'), ['pending', 'completed', 'failed'])) {
+            $query->where('status', '=', $request->input('status'));
         }
 
         $purchases = $query->latest()->paginate(20);
@@ -133,8 +138,8 @@ class AdminController extends Controller
     {
         $query = Payout::with(['user', 'purchase']);
 
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
+        if ($request->has('status') && in_array($request->input('status'), ['pending', 'paid', 'failed'])) {
+            $query->where('status', '=', $request->input('status'));
         }
 
         $payouts = $query->latest()->paginate(20);

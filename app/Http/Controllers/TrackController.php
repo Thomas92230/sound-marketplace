@@ -31,9 +31,10 @@ class TrackController extends Controller
         
         // Recherche par titre ou artiste
         if ($search = $request->get('search')) {
-            $query->where(function($q) use ($search) {
-                $q->where('title', 'like', "%{$search}%")
-                  ->orWhere('artist_name', 'like', "%{$search}%");
+            $searchTerm = '%' . $search . '%';
+            $query->where(function($q) use ($searchTerm) {
+                $q->where('title', 'like', $searchTerm)
+                  ->orWhere('artist_name', 'like', $searchTerm);
             });
         }
         
@@ -66,8 +67,8 @@ class TrackController extends Controller
         // Optimisation: une seule requête pour les achats
         $purchasedTrackIds = [];
         if ($user = $request->user()) {
-            $purchasedTrackIds = Purchase::where('user_id', $user->id)
-                ->where('status', 'completed')
+            $purchasedTrackIds = Purchase::where('user_id', '=', $user->id)
+                ->where('status', '=', 'completed')
                 ->pluck('track_id')
                 ->toArray();
         }
@@ -146,7 +147,7 @@ class TrackController extends Controller
     {
         $user = $request->user();
         
-        $tracks = Track::where('user_id', $user->id)
+        $tracks = Track::where('user_id', '=', $user->id)
             ->select('id', 'title', 'artist_name', 'price_cents', 'created_at')
             ->latest()
             ->paginate(15);
@@ -242,7 +243,7 @@ class TrackController extends Controller
 
         $tracks = Track::whereIn('id', $trackIds)
             ->where(function($query) use ($user) {
-                $query->where('user_id', $user->id)
+                $query->where('user_id', '=', $user->id)
                       ->orWhere(function($q) use ($user) {
                           if ($user->isAdmin()) $q->whereRaw('1=1');
                       });

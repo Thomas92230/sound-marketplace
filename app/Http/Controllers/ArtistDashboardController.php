@@ -12,46 +12,46 @@ class ArtistDashboardController extends Controller
 {
     public function index(Request $request): View
     {
-        $user = $request->user();
+        $userId = $request->user()->id;
 
-        $tracks = Track::where('user_id', $user->id)
+        $tracks = Track::where('user_id', '=', $userId)
             ->latest()
             ->get();
 
         $completedSales = Purchase::query()
-            ->where('status', 'completed')
-            ->whereHas('track', function ($q) use ($user) {
-                $q->where('user_id', $user->id);
+            ->where('status', '=', 'completed')
+            ->whereHas('track', function ($q) use ($userId) {
+                $q->where('user_id', '=', $userId);
             })
             ->with(['track', 'user'])
             ->latest()
             ->paginate(20, ['*'], 'sales_page');
 
         $salesCount = Purchase::query()
-            ->where('status', 'completed')
-            ->whereHas('track', function ($q) use ($user) {
-                $q->where('user_id', $user->id);
+            ->where('status', '=', 'completed')
+            ->whereHas('track', function ($q) use ($userId) {
+                $q->where('user_id', '=', $userId);
             })
             ->count();
 
         $grossRevenueCents = Purchase::query()
-            ->where('status', 'completed')
-            ->whereHas('track', function ($q) use ($user) {
-                $q->where('user_id', $user->id);
+            ->where('status', '=', 'completed')
+            ->whereHas('track', function ($q) use ($userId) {
+                $q->where('user_id', '=', $userId);
             })
             ->sum('amount_cents');
 
-        $payouts = Payout::where('user_id', $user->id)
+        $payouts = Payout::where('user_id', '=', $userId)
             ->with(['purchase.track'])
             ->latest()
             ->paginate(20, ['*'], 'payouts_page');
 
-        $pendingPayoutsCents = Payout::where('user_id', $user->id)
-            ->where('status', 'pending')
+        $pendingPayoutsCents = Payout::where('user_id', '=', $userId)
+            ->where('status', '=', 'pending')
             ->sum('amount_cents');
 
-        $paidPayoutsCents = Payout::where('user_id', $user->id)
-            ->where('status', 'paid')
+        $paidPayoutsCents = Payout::where('user_id', '=', $userId)
+            ->where('status', '=', 'paid')
             ->sum('amount_cents');
 
         return view('artist.dashboard', [

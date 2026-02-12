@@ -40,8 +40,8 @@
         </div>
 
         <div class="mb-6">
-            <label class="block mb-2">Fichier MP3</label>
-            <input type="file" name="track" accept="audio/mpeg" class="w-full" required>
+            <label class="block mb-2">Fichier Audio (MP3, WAV, OGG, M4A, AAC, FLAC)</label>
+            <input type="file" name="track" accept="audio/*" class="w-full" required>
         </div>
 
         <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">

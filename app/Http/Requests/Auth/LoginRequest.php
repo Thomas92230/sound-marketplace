@@ -49,6 +49,7 @@ class LoginRequest extends FormRequest
             ]);
         }
 
+        $this->session()->regenerate();
         RateLimiter::clear($this->throttleKey());
     }
 

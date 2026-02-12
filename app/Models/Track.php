@@ -22,8 +22,8 @@ class Track extends Model
     public function isPurchasedBy(int $userId): bool
     {
         return $this->purchases()
-            ->where('user_id', $userId)
-            ->where('status', 'completed')
+            ->where('user_id', '=', $userId)
+            ->where('status', '=', 'completed')
             ->exists();
     }
 

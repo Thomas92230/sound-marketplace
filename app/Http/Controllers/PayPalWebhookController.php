@@ -24,7 +24,7 @@ class PayPalWebhookController extends Controller
         if ($payload['event_type'] === 'CHECKOUT.ORDER.APPROVED') {
             $orderId = $payload['resource']['id'];
             
-            $purchase = Purchase::where('payment_id', $orderId)->first();
+            $purchase = Purchase::where('payment_id', '=', $orderId)->first();
             
             if ($purchase && $purchase->status === 'pending') {
                 // Capturer le paiement

@@ -16,9 +16,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\EnsureRole::class,
         ]);
         
-        // Exclure le webhook Stripe du middleware CSRF
+        // Exclure les webhooks du middleware CSRF
         $middleware->validateCsrfTokens(except: [
             'webhook/stripe',
+            'webhook/paypal',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

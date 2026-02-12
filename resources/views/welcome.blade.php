@@ -7,8 +7,8 @@
         <title>{{ config('app.name', 'Laravel') }}</title>
 
         <!-- Fonts -->
-        <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
+        <link rel="preconnect" href="https://fonts.bunny.net" crossorigin>
+        <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" crossorigin="anonymous" />
 
         <!-- Styles / Scripts -->
         @if (file_exists(public_path('build/manifest.json')) || file_exists(public_path('hot')))
@@ -101,8 +101,7 @@
 
                             <div class="flex items-center gap-6">
                                 <audio controls class="h-8" preload="metadata">
-                                    <source src="{{ $track->preview_url }}" type="audio/mpeg">
-                                    <source src="https://www.soundjay.com/misc/sounds/bell-ringing-05.wav" type="audio/wav">
+                                    <source src="{{ $track->preview_url }}">
                                     Votre navigateur ne supporte pas l'élément audio.
                                 </audio>
 
@@ -117,7 +116,7 @@
                                                class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium">
                                                 Télécharger
                                             </a>
-                                        @elseif($track->user_id !== auth()->id())
+                                        @elseif($track->user_id !== auth()->id() && !auth()->user()->isArtist())
                                             <div class="flex gap-2">
                                                 <form action="{{ route('cart.add', $track) }}" method="POST" class="inline">
                                                     @csrf

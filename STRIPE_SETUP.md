@@ -3,6 +3,7 @@
 ## Installation
 
 Le package Stripe est déjà installé via Composer :
+
 ```bash
 composer require stripe/stripe-php
 ```
@@ -21,9 +22,9 @@ composer require stripe/stripe-php
 Ajoutez ces variables dans votre fichier `.env` :
 
 ```env
-STRIPE_KEY=pk_test_... (votre clé publique)
-STRIPE_SECRET=sk_test_... (votre clé secrète)
-STRIPE_WEBHOOK_SECRET=whsec_... (secret du webhook)
+STRIPE_KEY=pk_test_YOUR_KEY_HERE
+STRIPE_SECRET=sk_test_YOUR_SECRET_HERE
+STRIPE_WEBHOOK_SECRET=whsec_YOUR_WEBHOOK_SECRET_HERE
 ```
 
 ### 3. Configurer le webhook Stripe

@@ -24,7 +24,7 @@ class ArtistStripeConnectController extends Controller
             if (! $user->stripe_account_id) {
                 $account = Account::create([
                     'type' => 'express',
-                    'country' => env('STRIPE_CONNECT_COUNTRY', 'FR'),
+                    'country' => config('services.stripe.country', 'FR'),
                     'email' => $user->email,
                     'capabilities' => [
                         'transfers' => ['requested' => true],
